@@ -26,7 +26,8 @@ def http_query(mode, args):
     elif mode ==  'post':
         if args.attach_file:
             log.info('Uploading attachment...')
-            r = requests.post(args.url, verify=args.ssl_verify, headers=args.headers, auth=auth, files=args.my_file)
+            data = {'comment' : args.attach_comment}
+            r = requests.post(args.url, verify=args.ssl_verify, headers=args.headers, auth=auth, files=args.my_file, data=data)
             if r.status_code == requests.codes.ok:
                 log.info('Success.')
         else:
@@ -95,6 +96,11 @@ def _parse_args():
                     '--attach',
                     dest='attach_file',
                     help='Path to file you wish to attach to the page.',
+                    default=None)
+    mp.add_argument('-c',
+                    '--comment',
+                    dest='attach_comment',
+                    help='Comment to add to the attachment.',
                     default=None)
     mp.add_argument('-m',
                     '--markup',
