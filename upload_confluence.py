@@ -1,4 +1,4 @@
-#!/usr/local/bin/python2.7
+#!/usr/bin/python
 
 import sys
 import logging
@@ -11,6 +11,7 @@ import json
 # requests is chatty
 logging.getLogger("requests").setLevel(logging.WARNING)
 requests.packages.urllib3.disable_warnings()
+log = logging.getLogger(__name__)
 
 
 def http_query(mode, args):
@@ -24,24 +25,26 @@ def http_query(mode, args):
         r = requests.get(args.url, verify=args.ssl_verify, headers=args.headers, auth=auth, params=args.data)
     elif mode ==  'post':
         if args.attach_file:
-            print "Uploading attachment..."
+            log.info('Uploading attachment...')
             r = requests.post(args.url, verify=args.ssl_verify, headers=args.headers, auth=auth, files=args.my_file)
+            if r.status_code == requests.codes.ok:
+                log.info('Success.')
         else:
             r = requests.post(args.url, verify=args.ssl_verify, headers=args.headers, auth=auth, json=args.data)
     elif mode ==  'put':
         r = requests.put(args.url, verify=args.ssl_verify, headers=args.headers, auth=auth, json=args.data)
     else:
-        print "Invalid mode"
+        log.error('invalid http mode.')
 
     if r.status_code == requests.codes.ok:
         return r.json()
     else:
         try:
             response = r.json()
-            print response['message']
+            log.warn('{0}'.format(response['message']))
         except:
             msg = 'There was an error querying confluence: http_status_code=%s,reason=%s,request=%s' % (r.status_code, r.reason, args.url)
-            print msg
+            log.error('{0}'.format(msg))
             raise Exception(msg)
 
 
@@ -130,7 +133,7 @@ def get_page(args):
         page_id = response['results'][0]['id']
         page_version = response['results'][0]['version']['number']
         if args.debug:
-            print json.dumps(response, indent=4, sort_keys=True)
+            log.debug('{0}'.format(json.dumps(response, indent=4, sort_keys=True)))
     else:
         page_id = None
         page_version = None
@@ -143,7 +146,7 @@ def create_page(args):
     Retrieve information about a page in confluence so we can update.
     """
 
-    print "creating new page"
+    log.info('Creating new page')
 
     setattr(args, 'data', {'type': 'page',
                            'title': args.page_title,
@@ -158,9 +161,9 @@ def create_page(args):
     response = http_query('post', args)
 
     if args.debug:
-        print json.dumps(response, indent=4, sort_keys=True)
+        log.debug('{0}'.format(json.dumps(response, indent=4, sort_keys=True)))
 
-    print 'Page created successfully: {0}{1}'.format(args.url_base, response['_links']['webui'])
+    log.info('Page created successfully: {0}{1}'.format(args.url_base, response['_links']['webui']))
 
 
 def update_page(args):
@@ -168,7 +171,7 @@ def update_page(args):
     Retrieve information about a page in confluence so we can update.
     """
 
-    print "Updating page"
+    log.info('Updating page...')
 
     setattr(args, 'data', {'id': args.page_id,
                            'type':'page',
@@ -186,9 +189,9 @@ def update_page(args):
     response = http_query('put', args)
 
     if args.debug:
-        print json.dumps(response, indent=4, sort_keys=True)
+        log.debug('{0}'.format(json.dumps(response, indent=4, sort_keys=True)))
 
-    print 'Page updated successfully: {0}{1}'.format(args.url_base, response['_links']['webui'])
+    log.info('Page updated successfully: {0}{1}'.format(args.url_base, response['_links']['webui']))
 
 
 def attach_file(args):
@@ -201,13 +204,13 @@ def attach_file(args):
     setattr(args, 'my_file', {'file': open(args.attach_file, 'rb')})
 
     # Have to check to see if the attachment already exists.
-    print "Checking for existing attachment"
+    log.info('Checking for existing attachment...')
     r =  http_query('get', args)
     if r['results']:
         for a in r['results']:
             if a['title'] == args.attach_file.rsplit('/', 1)[1]:
                 attachment_id = a['id']
-                print "found existing attachment: ", attachment_id
+                log.info('Found existing attachment: {0}'.format(attachment_id))
                 setattr(args, 'url', '{0}/{1}/child/attachment/{2}/data'.format(args.url_api_content, args.page_id, attachment_id))
 
     http_query('post', args)
@@ -218,14 +221,24 @@ def main():
     # parse the args
     args = _parse_args()
 
+    log_level = getattr(logging, 'DEBUG') if args.debug else getattr(logging, 'INFO')
+
+    root = logging.getLogger()
+    root.setLevel(log_level)
+
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(log_level)
+    formatter = logging.Formatter('%(levelname)-8s- %(message)s')
+    console.setFormatter(formatter)
+    root.addHandler(console)
+
     # Make sure we have required args
     required = ['host_fqdn',
                 'space_key',
                 'page_title']
     for r in required:
         if not args.__dict__[r]:
-            print >> sys.stderr, \
-                "\nERROR - Required option is missing: %s\n" % r
+            log.error('Required option is missing: {0}'.format(r))
             sys.exit(2)
 
     # Parse the config
